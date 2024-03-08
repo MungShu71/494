@@ -1,0 +1,3 @@
+New file starts at sector 6838
+Reads: 2
+Writes: 3
