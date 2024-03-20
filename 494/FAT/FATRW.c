@@ -7,122 +7,144 @@
 #include "jdisk.h"
 #include <math.h>
 
-#define SECTOR_SIZE (1024)
 #define SECTOR_MAX_LINKS (512)
 
 char BUF[1024];
 
-typedef struct disk{
-   void *dp = NULL;
-   int written = -1;
-   int read = -1;
-   int changed = -1;
-} disk;
-void EXPORT(int start_block, FILE *fp){
-   (void) start_block;
-   (void) fp;
-
-}
-int main(int argc, char** argv){
-   struct stat buf;
-   char* file = (char*) malloc(sizeof(char) * 50);
-   char* diskfile = (char*) malloc(sizeof(char) * 50);
-   void *p; // disk pointer
-   unsigned long dsize; // bytes in disk
-   int dsectors; // sectors in disk
-   int FAT_SIZE; // sectors in FAT
-   int fsize; // bytes in file
-   int fsectors; // sectors in file
-   int exist; // stat return val
-   int startblock = 0; 
-   FILE *fp;
-
-   strcpy(diskfile, argv[1]);
-
-   if (argc == 4){
-      strcpy(file, argv[3]);
-   }else if (argc == 5){
-      strcpy(file, argv[4]);
-      startblock = atoi(argv[3]);
-   }
-
+void IMPORT(FILE *fp, char *file, void *p){
+   unsigned short o, n;
+   int ss, FAT_SIZE = ceil((double) ((jdisk_size(p) / JDISK_SECTOR_SIZE ) +1) / ( 1+SECTOR_MAX_LINKS));
+   
+   //if (((jdisk_size(p)/1024)-FAT_SIZE+1)%512  == 0) FAT_SIZE ++;
+   unsigned short *links[FAT_SIZE];
+   for (int i = 0; i < FAT_SIZE; i ++) links[i] = NULL;
+   unsigned short x = 0;
    fp = fopen(file, "r");
    fseek(fp, 0, SEEK_END);
-   fsize = ftell(fp);
+   int fsize = ftell(fp);
    fseek(fp, 0, SEEK_SET);
-   p = jdisk_attach(diskfile);
+   int changed = 0;
+
+   if (jdisk_size(p) <= fsize){
+      fprintf(stderr, "%s is too big for the disk (%ld vs %d)\n", file, jdisk_size(p), fsize, jdisk_size(p) - JDISK_SECTOR_SIZE );
+      exit(1);
+   }
+   if (fsize % 1024 == 0) ss = 0;
+   else if (fsize % 1024 == 1023) ss = 1;
+   else if (fsize % 1024 < 1023) {ss = 2;}
+   o = (ss == 1) ? 0xffffffff : fsize % 1024;
+   int fsectors = ceil((double) fsize / JDISK_SECTOR_SIZE );
+
+   int free_count = 0;
+   for (int i = 0; i < fsectors; i++){
+
+      fread(BUF, sizeof(char), JDISK_SECTOR_SIZE , fp);
+      if (i == fsectors-1){
+         if (ss == 1) memcpy(BUF + 1023, &o, sizeof(char));
+         else if (ss == 2) memcpy(BUF + 1022, &o, sizeof(short));
+      }
+      if (links[x/512] == NULL){
+         links[x/512] = (unsigned short *) malloc(sizeof(unsigned short) * 512);
+         jdisk_read(p, x/512, links[x/512]);
+      }
+
+      x = (links[x/512][x%512] );
+      if (x == 0 && i < fsectors){
+         fprintf(stderr, "Not enough free sectors (%d) for %s, which needs %d\n", i, file, fsectors);
+         exit(1);
+      }
+      jdisk_write(p, x + FAT_SIZE - 1, BUF); 
+   }
+   if (links[x/512] == NULL) {
+      links[x/512] = (unsigned short *) malloc(sizeof(unsigned short) * 512);
+      jdisk_read(p, x/512, links[x/512]);  
+   }
+   int set = 0;
+   if (links[x/512][x%512] != links[0][0])  {
+      links[0][0] = links[x/512][x%512] ;
+      set |= (1 << (x/1024));
+   }
+   if (ss == 0) {
+      if (links[x/512][x%512] != 0){
+         links[x/512][x%512] = 0;
+         set |= (1 << (x/1024) );
+      }
+   }
+   else {
+      if( links[x/512][x%512] != x){
+         links[x/512][x%512] = x;
+         set |= (1 << (x/1024) );
+      }
+   }
+   for (int i = 0; i < FAT_SIZE; i++){
+      if (links[i] != NULL && (set & (1 << i) > 0)) {
+         jdisk_write(p, i, links[i]);
+      }
+   }
+   printf("New file starts at sector %d\n", links[0][0] + FAT_SIZE - 1);
+   fclose(fp);
+}
+void EXPORT(int startblock, FILE *fp, char *file, void *p){
+   fp = fopen(file, "w");
+   int ss, FAT_SIZE = ceil((double) (jdisk_size(p) / JDISK_SECTOR_SIZE ) / (1+ SECTOR_MAX_LINKS));
+   unsigned short *links[FAT_SIZE ];
+   int ind; 
+   int nbr = 0;
+   for (int i = 0; i < FAT_SIZE; i ++) links[i] = NULL;
+   int start = startblock;
+   while (1){
+      ind = start - FAT_SIZE + 1;
+      if (links[ind / 512] == NULL){
+         links[ind / 512] = (unsigned short*)malloc(sizeof(unsigned short) * 512);
+         jdisk_read(p, ind / 512, links[ind /512]);
+      }
+      unsigned short k = links[ind / 512][ind % 512];
+      if (k == 0 || k == ind ) break;
+      jdisk_read(p,start, BUF);
+      fwrite(BUF, 1, 1024, fp);
+      start = k + FAT_SIZE -1;
+   }
+   int sector = start ;
+   jdisk_read(p, sector, BUF);
+   if (links[ind/512][ind%512] == 0){
+      nbr = 1024;                                       /// taks up all 1024 bytes
+   }else {
+      if (BUF[1023] == 0xffffffff){
+         nbr = 1023;
+      }
+      else{
+         for (int j = 1023; j >= 1022; j --){
+            for (int i = 0; i < 8; i ++){
+               nbr |= ((BUF[j] & (1 << i)) << ((j - 1022) * 8));
+            }
+         }
+      }
+   }
+   fwrite(BUF, sizeof(char), nbr, fp);
+   fclose(fp);
+}
+
+int main(int argc, char** argv){
+   void *p; // disk pointer
+   int FAT_SIZE; // sectors in FAT
+   int startblock = 0;
+   FILE *fp;
+   p = jdisk_attach(argv[1]);
    if (p == NULL){
       fprintf(stderr, "###\n");
       exit(1);
    }
-   dsize = jdisk_size(p);
-   dsectors = dsize / SECTOR_SIZE;
+   FAT_SIZE = ceil((double) (jdisk_size(p) / JDISK_SECTOR_SIZE  ) / SECTOR_MAX_LINKS);
+   if (argc == 4){
+      IMPORT(fp, argv[3], p);
 
-   FAT_SIZE = ceil((double) dsectors / SECTOR_MAX_LINKS);
-   unsigned short LINKS[FAT_SIZE * SECTOR_MAX_LINKS];
-   jdisk_read(p, 0, LINKS);
-   disk Disks[dsectors];   
-   if (dsize <= fsize){
-      fprintf(stderr, "%s is too big for the disk (%ld vs %d)\n", file, fsize, dsize - SECTOR_SIZE);
-      exit(1);
-   }
-   int k = 0;
-   int entry;
-   int first_free = LINKS[0];
-   int free_sector_start = FAT_SIZE; 
-   int ss;
-   unsigned short o;
-   if (fsize % 1024 == 0) ss = 0;
-   else if (fsize % 1024 == 1023) {
-      ss = 1;
-      o = 0xff;
-   }
-   else if (fsize % 1024 < 1023){
-      ss = 2;
-      o = fsize % 1024;
-   }
-   if (first_free == 0){
-      printf("#F\n");
-   }
-   while (first_free != 0){
-      first_free = LINKS[first_free]; //?
-   }
-   fsectors = ceil((double) fsize / SECTOR_SIZE);
-   if ( argc == 4){
-   int i;
-   for (i = 0; i < fsectors; i++){
-
-      k += fread(BUF, sizeof(char), SECTOR_SIZE, fp);
-      if (i == fsectors-1){
-         
-         if (ss == 1) memcpy(BUF + 1023, &o, sizeof(char));
-         else if (ss == 2) memcpy(BUF + 1022, &o, sizeof(short));
-      }
-      jdisk_write(p, LINKS[first_free] + FAT_SIZE - 1, BUF); // ???
-      first_free = LINKS[first_free];
-      free_sector_start ++;
-   }
-//   printf("%d %d\n", first_free, LINKS[first_free]);
-   LINKS[0] = LINKS[first_free]; //?
-   switch (ss){
-      case 0:
-         LINKS[first_free] = 0;
-         break;
-      case 1:
-      case 2:
-         LINKS[first_free] = first_free;
-         break; 
+   }else if (argc == 5){
+      startblock = atoi(argv[3]);
+      EXPORT(startblock, fp, argv[4], p);
    }
 
-   jdisk_write(p, 0, LINKS);
-   fclose(fp);
-
-}
-else if (argc == 5){
-  
-}
-   printf("New file starts at sector %d\n", free_sector_start);
    printf("Reads: %ld\n", jdisk_reads(p));
    printf("Writes: %ld\n", jdisk_writes(p));
    return 0;
 }
+
