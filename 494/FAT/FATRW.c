@@ -15,7 +15,6 @@ void IMPORT(FILE *fp, char *file, void *p){
    unsigned short o, n;
    int ss, FAT_SIZE = ceil((double) ((jdisk_size(p) / JDISK_SECTOR_SIZE ) +1) / ( 1+SECTOR_MAX_LINKS));
    
-   //if (((jdisk_size(p)/1024)-FAT_SIZE+1)%512  == 0) FAT_SIZE ++;
    unsigned short *links[FAT_SIZE];
    for (int i = 0; i < FAT_SIZE; i ++) links[i] = NULL;
    unsigned short x = 0;
@@ -34,8 +33,7 @@ void IMPORT(FILE *fp, char *file, void *p){
    else if (fsize % 1024 < 1023) {ss = 2;}
    o = (ss == 1) ? 0xffffffff : fsize % 1024;
    int fsectors = ceil((double) fsize / JDISK_SECTOR_SIZE );
-
-   int free_count = 0;
+   
    for (int i = 0; i < fsectors; i++){
 
       fread(BUF, sizeof(char), JDISK_SECTOR_SIZE , fp);
@@ -53,34 +51,27 @@ void IMPORT(FILE *fp, char *file, void *p){
          fprintf(stderr, "Not enough free sectors (%d) for %s, which needs %d\n", i, file, fsectors);
          exit(1);
       }
+
       jdisk_write(p, x + FAT_SIZE - 1, BUF); 
+      
+
    }
-   if (links[x/512] == NULL) {
-      links[x/512] = (unsigned short *) malloc(sizeof(unsigned short) * 512);
-      jdisk_read(p, x/512, links[x/512]);  
-   }
-   int set = 0;
-   if (links[x/512][x%512] != links[0][0])  {
-      links[0][0] = links[x/512][x%512] ;
-      set |= (1 << (x/1024));
-   }
-   if (ss == 0) {
-      if (links[x/512][x%512] != 0){
-         links[x/512][x%512] = 0;
-         set |= (1 << (x/1024) );
+   if (links[(x) / 512] == NULL){
+         links[(x)/512] = (unsigned short *) malloc(sizeof(unsigned short) * 512);
+         jdisk_read(p, (x)/512, links[(x)/512]);
       }
+   int set = 0;
+   links[0][0] = links[(x)/512][(x)%512] ;
+   
+   if (ss == 0) {
+         links[x/512][x%512] = 0;
    }
    else {
-      if( links[x/512][x%512] != x){
          links[x/512][x%512] = x;
-         set |= (1 << (x/1024) );
-      }
    }
-   for (int i = 0; i < FAT_SIZE; i++){
-      if (links[i] != NULL && (set & (1 << i) > 0)) {
-         jdisk_write(p, i, links[i]);
-      }
-   }
+   set = x/512;
+   jdisk_write(p, 0, links[0]);
+   jdisk_write(p, set, links[set]);
    printf("New file starts at sector %d\n", links[0][0] + FAT_SIZE - 1);
    fclose(fp);
 }
