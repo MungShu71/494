@@ -60,9 +60,9 @@ void *b_tree_create(char *filename, long size, int key_size){
    b->num_lbas = size / 1024;
    b->keys_per_block = (JDISK_SECTOR_SIZE - 6) / (key_size + 4);
    b->lbas_per_block = (JDISK_SECTOR_SIZE - 6) / (key_size + 4) + 1;
-   b->free_list = NULL; // root initially on free
+   b->free_list = NULL;
    b->tmp_e = NULL;     // holds path that is set in find, always starts from head
-   b->tmp_e_index = -1;
+   b->tmp_e_index = 2;
    b->flush = -1;
 
    memcpy(BUF, &key_size, 4);
@@ -100,55 +100,67 @@ void *b_tree_attach(char *filename){
    b->tmp_e = NULL;
    b->tmp_e_index = -1;
    b->flush = -1;
-   
+
 
 
    return (void *) b;
 }
 
 unsigned int b_tree_insert(void *b_tree, void *key, void *record){
-   
+
+   unsigned int found = b_tree_find(b_tree, key);
    B_Tree *b = (B_Tree *) b_tree;
 
-   
    void *j = b->disk;
    unsigned int key_size = b->key_size;
    unsigned int mkeys = b->keys_per_block;
    unsigned int mlbas = b->lbas_per_block;
-   Tree_Node * t = b->root;
-   jdisk_read(j, 1, t->bytes);
+   //   Tree_Node * t = b->root;
+   //jdisk_read(j, b->tmp_e->lba, b->tmp_e->bytes);
+   int nkeys = b->tmp_e->nkeys;
    int i, res;
 
-   
- 
-   unsigned int found = b_tree_find(b_tree, key);
-
-   //while (1) 
    for (i = 0; i < b->tmp_e->nkeys; i++){
-      res = memcmp(key, &b->tmp_e->keys[i], key_size);
+      res = memcmp(key, &b->tmp_e->bytes[i * key_size + 2], key_size);
+      res = memcmp(key, &b->tmp_e->keys[i * key_size], key_size);
+
       if (res <= 0){
          if (res == 0){
-            memcpy(&b->tmp_e->lbas[i], record, 4);
-            return b->tmp_e->lba;
+            jdisk_write(j, found, record);
+            printf("%d ", found);
+            return found;
          }
          break;
       }
    }
-   memcpy(&b->tmp_e->keys[(i+1) * key_size + 2], &b->tmp_e->keys[i * key_size + 2], (mkeys - i) * key_size);
-   memcpy(&b->tmp_e->keys[i * key_size + 2], key, key_size);
-   
+   //   memcpy(&b->tmp_e->keys,
+
+            printf("%d ",i);
+   int f = b->tmp_e_index;
+   memcpy(&b->tmp_e->keys[(i+1) * key_size ], &b->tmp_e->keys[i * key_size ], (mkeys - i) * key_size);
+   memcpy(&b->tmp_e->keys[i * key_size], key, key_size);
 
    memcpy(&b->tmp_e->lbas[i + 1], &b->tmp_e->lbas[i], (mlbas - i) * 4 );
-   memcpy(&b->tmp_e->lbas[i], record, 4);
+   memcpy(&b->tmp_e->lbas[i], &b->tmp_e_index, 4);
 
-   return 1;
-   return t->bytes[1];
-   memcpy(&t->bytes[2], &b->tmp_e->keys, mkeys * key_size);
-   memcpy(&t->bytes[1024 - ((mkeys + 1) * 4)], b->tmp_e->lbas, mlbas * 4);
-   //return t->bytes[1024-((mkeys+1)*4)];   b->tmp_e->nkeys++;
-   t->bytes[1]++;
-   jdisk_write(j, 1, t->bytes);
-   return 1;
+   b->tmp_e->bytes[1] ++;
+   memcpy(&b->tmp_e->bytes[2], b->tmp_e->keys, mkeys * key_size);
+   memcpy(&b->tmp_e->bytes[1024 - (mlbas * 4)], b->tmp_e->lbas, mlbas * 4);
+   jdisk_write(j, b->tmp_e_index, record);
+   jdisk_write(j, b->tmp_e->lba, b->tmp_e->bytes);
+   b->tmp_e_index ++;
+   printf("%c %c %c %c ", b->tmp_e->keys[0], b->tmp_e->keys[1 * 200], b->tmp_e->keys[2 * 200], b->tmp_e->keys[3*200]);
+//   printf("%d %d %d ", b->tmp_e->lbas[0], b->tmp_e->lbas[1], b->tmp_e->lbas[2]);
+   
+   
+   Tree_Node * p = b->tmp_e;
+   while ( b->tmp_e->parent != b->root){
+      p = b->tmp_e->parent;
+   }
+   p->parent = NULL;
+   b->free_list = b->tmp_e;
+   
+   return f;
 }
 
 unsigned int b_tree_find(void *b_tree, void *key){
@@ -156,23 +168,25 @@ unsigned int b_tree_find(void *b_tree, void *key){
    B_Tree *b = (B_Tree *) b_tree;
    void *j = b->disk;
    int key_size = b->key_size;
-   unsigned int cur_lba = b->root_lba;
    int mkeys, mlbas, res, i;
    unsigned char nkeys;
+   unsigned int cur_lba = b->root_lba;
    mkeys = b->keys_per_block;
    mlbas = b->lbas_per_block;
    unsigned char external;
    int F = 0; 
    if (b->root == NULL){
-     b->root = (Tree_Node *) malloc(sizeof(Tree_Node));
-     b->root->keys = (unsigned char **) malloc((mkeys + 1) * key_size);
-     b->root->lbas = (unsigned int *) malloc((mkeys + 2) * 4);
-     b->free_list = b->root;
-     
-     b->root->bytes[0] = 0;
-     b->root->bytes[1] = 0;
+      b->root = (Tree_Node *) malloc(sizeof(Tree_Node));
+      b->root->keys = (unsigned char **) malloc((mkeys + 1) * key_size);
+      b->root->lbas = (unsigned int *) malloc((mkeys + 2) * 4);
+      b->free_list = b->root;
+
+      b->root->bytes[0] = 0;
+      b->root->bytes[1] = 0;
+      b->root->lba = b->root_lba;
+      b->root->nkeys = 0;
    }
-   
+
    Tree_Node *parent = b->root;
 
    while (1){
@@ -181,27 +195,29 @@ unsigned int b_tree_find(void *b_tree, void *key){
          n = (Tree_Node*)malloc(sizeof(Tree_Node)); 
          n->keys = (unsigned char **) malloc((mkeys + 1) * key_size);
          n->lbas = (unsigned int*) malloc((mkeys + 2) * 4);
-         
+
       } else {
          n = b->free_list;              // ????? something pointers
+         n->parent = NULL;
       }
-      
+
       jdisk_read(j, cur_lba, n->bytes);       
       external = n->bytes[0];        // 0 for external 1 for internal
       nkeys = n->bytes[1];
-      
+
       n->internal = external;
       n->nkeys = nkeys;
       n->lba = cur_lba;
 
-      memcpy(n->keys, &n->bytes[2], nkeys * key_size);  
-      memcpy(n->lbas, &n->bytes[1024 - ((mkeys + 1) * 4)], mlbas * 4);
+      memcpy(n->keys, &n->bytes[2], mkeys * key_size);  
+      memcpy(n->lbas, &n->bytes[1024 - (mlbas * 4)], mlbas * 4);
 
       n->parent = parent;
       parent = n;
 
       for (i = 0; i < nkeys; i++){
-         res = memcmp(key, &n->bytes[i * key_size + 2], key_size);
+        res = memcmp(key, &n->keys[i * key_size], key_size);
+        res = memcmp(key, &n->bytes[i * key_size + 2], key_size);
          if (res <= 0){
             if (res == 0) F = 1;
             break;
@@ -215,7 +231,7 @@ unsigned int b_tree_find(void *b_tree, void *key){
          }
          return 0;
       }
-   
+
    }
 }
 
@@ -232,7 +248,7 @@ int b_tree_key_size(void *b_tree){
 
 void b_tree_print_tree(void *b_tree){
    B_Tree *b = (B_Tree *) b_tree;
-   for (int i = 0 ; i < b->root->nkeys; i ++) printf("%d ", i);
-   printf("\n");
+   
+   for (int i = 0; i < b->root->nkeys; i ++) fprintf(stderr,"%c ", b->root->keys[i * 200]); 
 }
 
