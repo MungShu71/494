@@ -36,135 +36,44 @@ typedef struct {
 
    int flush;                    /* Should I flush sector[0] to disk after b_tree_insert() */
 
-
 } B_Tree;
 
 Tree_Node * new_node(B_Tree * tree){
    Tree_Node * n;
    n = (Tree_Node*)malloc(sizeof(Tree_Node));
-   n->keys = (unsigned char **) malloc( sizeof(char *) * (tree->keys_per_block + 1 ));
-   n->lbas = (unsigned int*) malloc(sizeof(unsigned int) * (tree->lbas_per_block  + 1) );
+   n->keys = (unsigned char **) malloc( tree->keys_per_block + 1 );
+   n->lbas = (unsigned int*) malloc( tree->lbas_per_block + 1 );
 
    for (int i = 0; i < tree->keys_per_block; i ++){
       n->keys[i] = &n->bytes[(i * tree->key_size) + 2];
    }
    n->nkeys = 0;
    n->flush = 0;
-   n->internal = 0;     
-   n->lba = 0;
-   n->parent_index = 0;
+   n->lba = 0
+   n->parent_index = 0
    n->parent = NULL;
    n->ptr = NULL;
-   return n;
 }
 
-Tree_Node * fill(B_Tree *tree, Tree_Node *n,  unsigned int lba){
-   jdisk_read(tree->disk, lba, n->bytes);
-
-   n->lba = lba; 
-   n->internal = n->bytes[0];
-   n->nkeys = n->bytes[1];
-
-   for (int i = 0; i < n->nkeys + 1; i ++) n->keys[i] = &n->bytes[(i * tree->key_size) + 2];
-   for (int i = 0; i < n->nkeys +1; i ++) n->lbas[i] = n->bytes[(JDISK_SECTOR_SIZE - ((4 * tree->lbas_per_block))) + (4 * i)]; 
-   return n;
+void fill(B_Tree *tree, Tree_Node *n, unsigned int lba){
+   jdisk_read(tree->disk, 
+   
+   for (int i = 0; i < n->nkeys; i ++) n->keys[i] = &n->bytes[(i * tree->key_size) + 2];
+   for (int i = 0; i < n->nkeys + 1; i ++) n->lbas[i] = &n->bytes[JDISK_SECTOR_SIZE - ((4 * tree->lbas_per_block) + (4 * i))]; 
 }
 
-void shift(B_Tree *tree, Tree_Node *n, int i){
-   if (i >= n->nkeys) return;
-   memcpy(n->keys[i + 1], n->keys[i], (tree->keys_per_block - i) * tree->key_size );
-   memcpy(&n->lbas[i + 1], &n->lbas[i], (tree->lbas_per_block - i) * 4); 
-}
-
-
-unsigned int b_tree_insert(void *b_tree, void *key, void *record){
-
-   B_Tree * tree = (B_Tree *) b_tree;
-
-   if (tree->first_free_block > tree->num_lbas){
-      fprintf(stderr, "Tree Full\n");
-      exit(0);
-   }
-
-   unsigned int F = b_tree_find(b_tree, key);
-
-   Tree_Node *n = tree->tmp_e;
-   int i, res;
-   for (i = 0; i < n->nkeys; i++){
+int sort(B_Tree *tree, Tree_Node *n, void * key, int T){
+   int res, found;
+   found = 0;
+   for (int i = 0; i < n->nkeys; i ++){
       res = memcmp(key, n->keys[i], tree->key_size);
       if (res <= 0){
-         if (res == 0){
-            jdisk_write(tree->disk, F, record);
-            return F;
-         }
+         if (res == 0) return i;
          break;
       }
    }
-   shift(tree, n, i);
-   memcpy(n->keys[i], key, tree->key_size); 
-   memcpy(&n->lbas[i], &tree->first_free_block, 4); 
-
-   fprintf(stderr, " %c | %c | %c | %c ", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
-   printf(" %d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
-
-   n->nkeys ++;
-   n->bytes[1] ++;
-
-   memcpy(&n->bytes + 2, n->keys, tree->keys_per_block * tree->key_size);
-   memcpy(&n->bytes[JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4)], n->lbas, tree->lbas_per_block * 4);
-
-   jdisk_write(tree->disk, tree->first_free_block, record);
-   jdisk_write(tree->disk, n->lba, n->bytes);
-   jdisk_write(tree->disk, 0, tree);
-   F = tree->first_free_block;
-   tree->first_free_block ++;
-   return F;
+   return i;
 }
-
-unsigned int b_tree_find(void *b_tree, void *key){
-   unsigned int cur;
-   int F = 0;
-   int i, res;
-   B_Tree * tree = (B_Tree *) b_tree;
-   cur = tree->root_lba;
-   Tree_Node *head = NULL;
-   int s = 1;
-   while (1){
-      Tree_Node *n = new_node(tree);
-      n = fill(tree, n, cur);
-      for ( i = 0; i < n->nkeys; i ++){
-         res = memcmp(key, n->keys[i], tree->key_size);
-         if (res <= 0){
-            if (res == 0) F = 1;
-            break;
-         }
-      }
-      n->parent = head;
-      head = n; 
-
-      cur = n->lbas[i];
-      if (n->internal == 0){
-         tree->tmp_e = head;
-         if (F){
-            return cur;
-         }     
-         tree->tmp_e_index = cur;
-         return 0;
-      }
-
-
-   }
-}
-
-/*
-   while ( tree->tmp_e != NULL){
-   printf("%d | ", tree->tmp_e->lba);
-   tree->tmp_e = tree->tmp_e->parent;
-
-   }
-
-
-*/
 
 
 void *b_tree_create(char *filename, long size, int key_size){
@@ -190,8 +99,8 @@ void *b_tree_create(char *filename, long size, int key_size){
    b->lbas_per_block = (JDISK_SECTOR_SIZE - 6) / (key_size + 4) + 1;
    b->free_list = NULL;
    b->tmp_e = NULL;     // holds path that is set in find, always starts from head
-   b->tmp_e_index = -1;
-   b->flush = 1;
+   b->tmp_e_index = 2;
+   b->flush = -1;
 
    memcpy(BUF, &key_size, 4);
    memcpy(BUF + 4, &b->root_lba, 4);
@@ -202,16 +111,6 @@ void *b_tree_create(char *filename, long size, int key_size){
    return (void*) b;
 
 }
-
-
-
-
-
-
-
-
-
-
 
 void *b_tree_attach(char *filename){   
    unsigned char BUF[1024];
@@ -237,23 +136,95 @@ void *b_tree_attach(char *filename){
    b->free_list = NULL;
    b->tmp_e = NULL;
    b->tmp_e_index = -1;
-   b->flush = 1;
+   b->flush = -1;
 
 
 
    return (void *) b;
 }
 
+unsigned int b_tree_insert(void *b_tree, void *key, void *record){
+  (void) b_tree;
+  (void) key;
+  (void) record;
+   return 0;
+}
 
+unsigned int b_tree_find(void *b_tree, void *key){
 
+   B_Tree *b = (B_Tree *) b_tree;
+   void *j = b->disk;
+   int key_size = b->key_size;
+   unsigned int cur_lba = b->root_lba;
+   int mkeys, mlbas, res, i;
+   unsigned char nkeys;
+   mkeys = b->keys_per_block;
+   mlbas = b->lbas_per_block;
+   unsigned char external;
+   int F = 0; 
+   if (b->root == NULL){
+      b->root = (Tree_Node *) malloc(sizeof(Tree_Node));
+      b->root->keys = (unsigned char **) malloc((mkeys + 1) * key_size);
+      b->root->lbas = (unsigned int *) malloc((mkeys + 2) * 4);
+      b->free_list = b->root;
 
+      b->root->bytes[0] = 0;
+      b->root->bytes[1] = 0;
+      b->root->lba = b->root_lba;
+      b->root->nkeys = 0;
+      b->root->parent = NULL;
+   }
 
+   Tree_Node *parent = b->root;
 
+   while (1){
+      Tree_Node *n;
+      if (b->free_list == NULL) {
 
+         printf("2"); 
+         n = (Tree_Node*)malloc(sizeof(Tree_Node)); 
+         n->keys = (unsigned char **) malloc((mkeys + 1) * key_size);
+         n->lbas = (unsigned int*) malloc((mkeys + 2) * 4);
+      } else {
+         n = b->free_list; // ????? something pointers
+         b->free_list->parent = n->parent;
+         n->parent = NULL;
+      }
 
+      jdisk_read(j, cur_lba, (n->bytes));       
+      external = n->bytes[0];        // 0 for external 1 for internal
+      nkeys = n->bytes[1];
 
+      n->internal = external;
+      n->nkeys = nkeys;
+      n->lba = cur_lba;
 
+      fill(b, n)
+     // memcpy(n->keys, &n->bytes[2], mkeys * key_size);  
+     // memcpy(n->lbas, &n->bytes[1024 - (mlbas * 4)], mlbas * 4);
 
+      n->parent = parent;
+      parent = n;
+
+      for (i = 0; i < nkeys; i++){
+         res = memcmp(key, &n->keys[i * key_size], key_size);
+         res = memcmp(key, &n->bytes[i * key_size + 2], key_size);
+         if (res <= 0){
+            if (res == 0) F = 1;
+            break;
+         }
+      }
+      cur_lba = n->lbas[i];
+      if (external == 0) {
+         b->tmp_e = parent;
+         if (F) {
+            return cur_lba;
+         }
+         return 0;
+      }
+
+   }
+}
 
 
 void *b_tree_disk(void *b_tree){
