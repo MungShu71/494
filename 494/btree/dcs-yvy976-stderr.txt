@@ -1,1 +1,0 @@
-DOUBLE-CHECK: Error at lba 1.  Key 0 is not less than key 1

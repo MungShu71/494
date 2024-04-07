@@ -191,6 +191,7 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
    char BUF[1024];
    memcpy(BUF, &tree->key_size, 4);
    memcpy(BUF + 4, &tree->root_lba, 4);
+   //tree->first_free_block ++;
    memcpy(BUF + 8, &tree->first_free_block, 8);
    jdisk_write(tree->disk, 0, BUF);
    return F;
