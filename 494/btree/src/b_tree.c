@@ -99,7 +99,6 @@ void split(B_Tree *tree, Tree_Node *n){
          n->parent = parent;
          parent->nkeys = 0;
          tree->root_lba = parent->lba;          // write to boot block
-         parent->lbas[0] = n->lba;
       } else {
          parent = n->parent;
       }
@@ -118,7 +117,11 @@ void split(B_Tree *tree, Tree_Node *n){
          }
       }
      // fprintf(stderr, "i: %d \n", i);
-      shift(tree, parent, i, 0);
+     // shift(tree, parent, i, 0);
+     for (int k = parent->nkeys; k > i; k--){
+      memcpy(parent->keys[k], parent->keys[k-1], tree->key_size);
+      parent->lbas[i + 1] = parent->lbas[i];
+     }
       memcpy(parent->keys[i], n->keys[K], tree->key_size); 
 
       parent->nkeys ++;
@@ -126,22 +129,25 @@ void split(B_Tree *tree, Tree_Node *n){
       // lbas of parent is the two child nodes
 //      parent->lbas[i] = n->lba;
       parent->lbas[i+1] = child2->lba;
+         parent->lbas[i] = n->lba;
 
       // copy keys and lba to child
-      for (int j = K+1; j <= tree->lbas_per_block; j++) {
-         child2->lbas[j-(K+1)] = n->lbas[j];
+      int k, j;
+      for ( j = K+1,  k = 0; j < n->nkeys; j++, k++) {
+         child2->nkeys ++;
+         memmove(child2->keys[k], n->keys[j], tree->key_size);
+         child2->lbas[k] = n->lbas[j];
       }
-      memmove(child2->keys[0], n->keys[1+K], K * tree->key_size);
-
+      child2->lbas[k] = n->lbas[j];
       // update keys
-      child2->nkeys = tree->keys_per_block - (K) - 1;
-      n->nkeys = (tree->keys_per_block + 1) / 2;
-//      child2->nkeys = K + 1;
+    //  child2->nkeys = tree->keys_per_block - (K) - 1;
+      n->nkeys /= 2;
+      child2->nkeys = k;
 //      n->nkeys = K;
 
       // zero out the bytes
-      bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
-      bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
+  //    bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
+  //    bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
 
       // copy lbas to respective node's bytes 
       memcpy(parent->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), parent->lbas, tree->lbas_per_block * 4);
