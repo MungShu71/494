@@ -44,7 +44,8 @@ Tree_Node * new_node(B_Tree * tree){
    n = (Tree_Node*)malloc(sizeof(Tree_Node));
    n->keys = (unsigned char **) malloc((tree->keys_per_block + 1 ) * sizeof(char *));
    n->lbas = (unsigned int*) malloc((tree->lbas_per_block  + 1) * sizeof(unsigned int));
-   bzero(n->bytes, 1024);
+
+   //  bzero(n->keys, (tree->keys_per_block + 1) * sizeof(char *));
 
    for (int i = 0; i < tree->keys_per_block; i ++){
       n->keys[i] = &n->bytes[(i * tree->key_size) + 2];
@@ -65,34 +66,43 @@ Tree_Node * fill(B_Tree *tree, Tree_Node *n,  unsigned int lba){
    n->lba = lba; 
    n->internal = n->bytes[0];
    n->nkeys = n->bytes[1];
+   //   memcpy(&n->nkeys, &n->bytes[1], 1);
 
    for (int i = 0; i < n->nkeys + 1; i ++) n->keys[i] = &n->bytes[(i * tree->key_size) + 2];
-   for (int i = 0; i < n->nkeys +1; i ++) n->lbas[i] = n->bytes[(JDISK_SECTOR_SIZE - ((4 * tree->lbas_per_block))) + (4 * i)]; 
+   for (int i = 0; i < n->nkeys + 1; i ++) n->lbas[i] = n->bytes[(JDISK_SECTOR_SIZE - ((4 * tree->lbas_per_block))) + (4 * i)]; 
    return n;
 }
 
 void shift(B_Tree *tree, Tree_Node *n, int i, int T){
+   // if (T == 0 && i >= n->nkeys + 1) return;
    if (i >= n->nkeys) return;
+
    memcpy(n->keys[i + 1], n->keys[i], (tree->keys_per_block - i) * tree->key_size );
    if ( T == 1){
-      memcpy(&n->lbas[i + 1], &n->lbas[i], (tree->lbas_per_block - i) * 4); 
+      //    memcpy(&n->lbas[i + 1], &n->lbas[i], (tree->lbas_per_block - i) * 4); 
    } else{
-      memcpy(&n->lbas[i + 2], &n->lbas[i], (tree->lbas_per_block - i) * 4); 
+      //    memcpy(&n->lbas[i + 1], &n->lbas[i], (tree->lbas_per_block - i) * 4); 
    }
+
+   for (int k = n->nkeys; k >= i; k --){
+      //    memcpy(n->keys[k], n->keys[k-1], tree->key_size );
+      n->lbas[k+1] = n->lbas[k] ;
+   }
+
 }
 void split(B_Tree *tree, Tree_Node *n){
    int i, res;
+   //Tree_Node *parent, *child2;
    while (1){
       Tree_Node *parent, *child2;
-      if (n->nkeys < tree->keys_per_block){
+      if (n->nkeys <= tree->keys_per_block){
          return;
       }
-      //parent = (n->parent == NULL) ? new_node(tree) : n->parent;
-
 
       child2 = new_node(tree);
       child2->lba = tree->first_free_block ++;
       child2->parent = parent;
+      child2->internal = 0;
 
       if (n->parent == NULL) {  // root
          parent = new_node(tree);
@@ -106,48 +116,51 @@ void split(B_Tree *tree, Tree_Node *n){
       } else {
          parent = n->parent;
       }
-      
-      
+
+
+      int K = tree->keys_per_block % 2 == 0 ? n->nkeys / 2 : (n->nkeys / 2) + 1;
+      fprintf(stderr, "K : %d\n", K);
+
       for (i = 0; i < parent->nkeys; i++){
-         res = memcmp(parent->keys[i], n->keys[n->nkeys / 2], tree->key_size);
-         if (res < 0){
+         res = memcmp(parent->keys[i], n->keys[K], tree->key_size);
+         if (res <= 0){
             break;
          }
       }
       shift(tree, parent, i, 0);
-      memcpy(parent->keys[i], n->keys[n->nkeys / 2], tree->key_size);
-      
+      memcpy(parent->keys[i], n->keys[K], tree->key_size); 
 
-      parent->keys ++;
-      parent->bytes[1]++;
+      parent->nkeys ++;
 
       parent->lbas[i] = n->lba;
       parent->lbas[i+1] = child2->lba;
-      
-      memcpy(&child2->lbas[i], &n->lbas[(n->nkeys / 2) + 1], (tree->lbas_per_block - ((n->nkeys / 2) + 1)) * 4);
-      memcpy(child2->keys[0], n->keys[(n->nkeys / 2)+ 1], (tree->keys_per_block - ((n->nkeys / 2))) * tree->key_size);
 
-      child2->nkeys = n->nkeys / 2;
+      memcpy(&child2->lbas[i], &n->lbas[(K) + 1], (tree->lbas_per_block - ((K) + 1)) * 4);
+      memcpy(child2->keys[0], n->keys[(K)+ 1], (tree->keys_per_block - ((K))) * tree->key_size);
+
+      child2->nkeys = tree->keys_per_block - ((K) + 1);
+
+      //n->nkeys = n->nkeys - ((n->nkeys/2) + 1);
+      n->nkeys = (K + 1);
+      bzero(n->keys[K], ((tree->keys_per_block - (K)) +1)  * tree->key_size );
+      bzero(&n->lbas[K], ((tree->lbas_per_block - (K)) + 1) * 4);
+
+      memcpy(parent->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), parent->lbas, tree->lbas_per_block * 4);
+
+      memcpy(child2->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), child2->lbas, tree->lbas_per_block * 4);
+
+
+      parent->bytes[0] = parent->internal;
+      parent->bytes[1] = parent->nkeys;
+
+      child2->bytes[0] = child2->internal;
       child2->bytes[1] = child2->nkeys;
-      
-      n->nkeys -= n->nkeys/2;
-      n->bytes[1] = n->nkeys;
-
-
-      memcpy(&parent->bytes[JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4)], parent->lbas, tree->lbas_per_block * 4);
-
-      memcpy(&child2->bytes[JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4)], child2->lbas, tree->lbas_per_block * 4);
-
-
-      bzero(n->keys[n->nkeys / 2], ((tree->keys_per_block - (n->nkeys / 2)) +1)  * tree->key_size );
-      bzero(&n->lbas[n->nkeys / 2], ((tree->lbas_per_block - (n->nkeys / 2)) + 1) * 4);
 
       jdisk_write(tree->disk, parent->lba, parent->bytes);
       jdisk_write(tree->disk, child2->lba, child2->bytes);
-
       n = parent;
-
    }
+
 }
 
 unsigned int b_tree_insert(void *b_tree, void *key, void *record){
@@ -156,98 +169,61 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
 
    if (tree->first_free_block > tree->num_lbas){
       return 0;
-      fprintf(stderr, "Tree Full\n");
-      exit(0);
    }
 
    unsigned int F = b_tree_find(b_tree, key);
 
+   if (F != 0) {
+      jdisk_write(tree->disk, F, record);
+      return F;
+   }
+
    Tree_Node *n = tree->tmp_e;
+
    int i, res;
+
    for (i = 0; i < n->nkeys; i++){
       res = memcmp(key, n->keys[i], tree->key_size);
-      if (res <= 0){
-         if (res == 0){
-            jdisk_write(tree->disk, F, record);
-            return F;
-         }
-         break;
-      }
+      if (res <= 0) break;     
    }
+
    F = tree->first_free_block;
    tree->first_free_block ++;
 
+
    shift(tree, n, i, 1);
-   memcpy(n->keys[i], key, tree->key_size); 
-   memcpy(&n->lbas[i], &F, 4); 
 
-   n->nkeys ++;
-   n->bytes[1] ++;
+   memcpy(n->keys[i], key, tree->key_size);
 
-   if (n->nkeys > tree->keys_per_block) split(tree, n);
-   memcpy(&n->bytes[JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4)], n->lbas, tree->lbas_per_block * 4);
+   n->lbas[i] = F;
+
    jdisk_write(tree->disk, F, record);
+   n->nkeys ++;
+   fprintf(stderr, "before %d\n ", n->nkeys);
+   n->internal = 0;
+
+   if (n->nkeys > tree->keys_per_block) {
+      split(tree, n);
+   }
+   fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
+   fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
+   memcpy(n->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), n->lbas, (tree->lbas_per_block) * 4);
+
+   // n->bytes[1] ++;
+   n->bytes[1] = n->nkeys;
+   n->bytes[0] = n->internal;
    jdisk_write(tree->disk, n->lba, n->bytes);
+   fprintf(stderr, "after %d\n", n->nkeys);
+   //  fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
+   //  fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
    char BUF[1024];
    memcpy(BUF, &tree->key_size, 4);
    memcpy(BUF + 4, &tree->root_lba, 4);
-   //tree->first_free_block ++;
+
    memcpy(BUF + 8, &tree->first_free_block, 8);
    jdisk_write(tree->disk, 0, BUF);
    return F;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 unsigned int b_tree_find(void *b_tree, void *key){
    unsigned int cur;
@@ -263,24 +239,32 @@ unsigned int b_tree_find(void *b_tree, void *key){
       for ( i = 0; i < n->nkeys; i ++){
          res = memcmp(key, n->keys[i], tree->key_size);
          if (res <= 0){
+            // we have found the key
             if (res == 0) F = 1;
             break;
          }
       }
+      // i at this point should be the index where the key is
+
+      // building path top down
       n->parent = head;
       head = n; 
 
       cur = n->lbas[i];
-      if (n->internal == 0){
+      /* 
+       * If we are at external level and we have found the key, return lba of val sector
+       * If we are at exernal level and have no found the key, key is not in tree
+       */
+      if (n->internal == 0){    
+
+         // store complete path from root to external in tmp_e
          tree->tmp_e = head;
+         tree->tmp_e_index = i;
          if (F){
             return cur;
          }     
-         tree->tmp_e_index = cur;
          return 0;
       }
-
-
    }
 }
 
@@ -360,18 +344,6 @@ void *b_tree_attach(char *filename){
    return (void *) b;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 void *b_tree_disk(void *b_tree){
    B_Tree *b = (B_Tree *) b_tree;
    return b->disk;
@@ -381,10 +353,41 @@ int b_tree_key_size(void *b_tree){
    B_Tree *b = (B_Tree *) b_tree;
    return b->key_size;
 }
+void print_node(Tree_Node *node, B_Tree * tree) {
+   fprintf(stderr, "[node->nkeys] | %d\n", node->nkeys);
+   fprintf(stderr, "[node->flush] | %d\n", node->flush);
+   fprintf(stderr, "[node->inter] | %d\n", node->internal);
+   fprintf(stderr, "[node->lba  ] | %u\n", node->lba);
+   fprintf(stderr, "[node->keys ] | ");
+   for (int i = 0; i < tree->keys_per_block + 1; i++) {
+      fprintf(stderr, "[%c]", node->keys[i]);
+   }
+   fprintf(stderr, "\n");
+   fprintf(stderr, "[node->lbas ] | ");
+   for (int i = 0; i < tree->lbas_per_block + 1; i++) {
+      fprintf(stderr, "[%d]", node->lbas[i]);
+   }
+   fprintf(stderr, "\n");
+   fprintf(stderr, "[node->paren] | %p\n", node->parent);
+   fprintf(stderr, "[node->par_i] | %d\n", node->parent_index);
+   fprintf(stderr, "[node->ptr  ] | %p\n", node->ptr);
+   fprintf(stderr, "\n");
+}
+void p(Tree_Node * n, B_Tree * tree){
+   print_node(n, tree);
+   for (int i = 0; i < n->nkeys; i ++){
+      Tree_Node * e = new_node(tree);
 
+      e = fill(tree,e, e->lbas[i]);
+      p(e, tree);
+   }
+}
 void b_tree_print_tree(void *b_tree){
-   B_Tree *b = (B_Tree *) b_tree;
+   B_Tree * tree = (B_Tree *)b_tree;
+   Tree_Node * root = new_node(tree);
+   root = fill(tree,root, tree->root_lba);
+   p(root, tree);
 
-   for (int i = 0; i < b->root->nkeys; i ++) fprintf(stderr,"%c ", b->root->keys[i * 200]); 
+
 }
 
