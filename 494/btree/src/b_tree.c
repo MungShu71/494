@@ -107,6 +107,7 @@ void split(B_Tree *tree, Tree_Node *n){
       child2->lba = tree->first_free_block ++;
       child2->parent = parent;
       child2->internal = 0;
+      child2->flush = 2;
 
       if (n->parent == NULL) {  // root
          parent = new_node(tree);
@@ -117,6 +118,7 @@ void split(B_Tree *tree, Tree_Node *n){
          n->parent = parent;
          parent->nkeys = 0;
          tree->root_lba = parent->lba;
+         parent->flush = 0;
       } else {
          parent = n->parent;
       }
@@ -147,7 +149,7 @@ void split(B_Tree *tree, Tree_Node *n){
       //n->nkeys = n->nkeys - ((n->nkeys/2) + 1);
       n->nkeys -= (K );
       bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
-      bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
+    //  bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
   /*
   if (n->internal == 0){
       fprintf(stderr, "I: %d\n", child2->nkeys);
@@ -223,7 +225,7 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
    n->bytes[0] = n->internal;
    jdisk_write(tree->disk, n->lba, n->bytes);
   // if (n->internal == 0){
-  // fprintf(stderr, "NODE lba %d\n ", n->lba);
+   //fprintf(stderr, "NODE lba %d\n ", n->nkeys);
       
    //  fprintf(stderr, "key %c | %c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0], n->keys[4][0]);
    //  fprintf(stderr, "lba %d | %d | %d | %d \n", n->lbas[1], n->lbas[2], n->lbas[3], n->lbas[4]);
@@ -365,41 +367,33 @@ int b_tree_key_size(void *b_tree){
    B_Tree *b = (B_Tree *) b_tree;
    return b->key_size;
 }
+
 void print_node(Tree_Node *node, B_Tree * tree) {
-   fprintf(stderr, "[node->nkeys] | %d\n", node->nkeys);
-   fprintf(stderr, "[node->flush] | %d\n", node->flush);
-   fprintf(stderr, "[node->inter] | %d\n", node->internal);
-   fprintf(stderr, "[node->lba  ] | %u\n", node->lba);
-   fprintf(stderr, "[node->keys ] | ");
-   for (int i = 0; i < tree->keys_per_block + 1; i++) {
-      fprintf(stderr, "[%c]", node->keys[i]);
-   }
-   fprintf(stderr, "\n");
-   fprintf(stderr, "[node->lbas ] | ");
-   for (int i = 0; i < tree->lbas_per_block + 1; i++) {
-      fprintf(stderr, "[%d]", node->lbas[i]);
-   }
-   fprintf(stderr, "\n");
-   fprintf(stderr, "[node->paren] | %p\n", node->parent);
-   fprintf(stderr, "[node->par_i] | %d\n", node->parent_index);
-   fprintf(stderr, "[node->ptr  ] | %p\n", node->ptr);
-   fprintf(stderr, "\n");
+    printf("LBA 0x%08x.  Internal: %d\n", node->lba, node->internal);
+    
+    for (int i = 0; i < node->nkeys; i++) {
+        printf("  Entry %d: Key: %-32s ", i, node->keys[i]);
+         printf("   LBA: %d\n", b_tree_find((void*)tree, node->keys[i]));
+    }
+    
+  printf("  Entry %d: Key: NULL        LBA: %d \n", node->nkeys,  node->lbas[node->nkeys]); //b_tree_find((void*) tree, node->keys[node->nkeys]));
+   printf("\n");
 }
 void p(Tree_Node * n, B_Tree * tree){
+   
    print_node(n, tree);
-   for (int i = 0; i < n->nkeys; i ++){
+   if (n->internal == 0) return;
+   for (int i = 0; i < n->nkeys + 1  ; i ++){
+      
       Tree_Node * e = new_node(tree);
 
-      e = fill(tree,e, e->lbas[i]);
-      p(e, tree);
-   }
+      e = fill(tree,e, n->lbas[i]);
+       p(e, tree);
+  } 
 }
 void b_tree_print_tree(void *b_tree){
    B_Tree * tree = (B_Tree *)b_tree;
    Tree_Node * root = new_node(tree);
    root = fill(tree,root, tree->root_lba);
    p(root, tree);
-
-
 }
-
