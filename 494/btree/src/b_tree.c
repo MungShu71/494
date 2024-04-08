@@ -75,7 +75,11 @@ Tree_Node * fill(B_Tree *tree, Tree_Node *n,  unsigned int lba){
 
 void shift(B_Tree *tree, Tree_Node *n, int i, int T){
    // if (T == 0 && i >= n->nkeys + 1) return;
-   if (i >= n->nkeys) return;
+   if (T != 0 && i >= n->nkeys) {
+   //   fprintf(stderr, "T: %d %d\n", T, n->lba);
+   
+   return;
+   }
 
    memcpy(n->keys[i + 1], n->keys[i], (tree->keys_per_block - i) * tree->key_size );
    if ( T == 1){
@@ -118,8 +122,7 @@ void split(B_Tree *tree, Tree_Node *n){
       }
 
 
-      int K = tree->keys_per_block % 2 == 0 ? n->nkeys / 2 : (n->nkeys / 2) + 1;
-      fprintf(stderr, "K : %d %d\n", K, n->keys);
+      int K = tree->keys_per_block % 2 == 0 ? tree->keys_per_block / 2 : (tree->keys_per_block / 2) + 1;
 
       for (i = 0; i < parent->nkeys; i++){
          res = memcmp(parent->keys[i], n->keys[K], tree->key_size);
@@ -135,17 +138,26 @@ void split(B_Tree *tree, Tree_Node *n){
       parent->lbas[i] = n->lba;
       parent->lbas[i+1] = child2->lba;
 
-      memcpy(&child2->lbas[i], &n->lbas[(K) + 1], (tree->lbas_per_block - ((K) + 1)) * 4);
-      memcpy(child2->keys[0], n->keys[(K)+ 1], (tree->keys_per_block - ((K))) * tree->key_size);
+      memcpy(&child2->lbas[0], &n->lbas[(K + 1) ], (tree->lbas_per_block - ((K)  )) * 4);
+      memcpy(child2->keys[0], n->keys[(K) + 1], (tree->keys_per_block - (( K))) * tree->key_size);
 
-      child2->nkeys = tree->keys_per_block - ((K) + 1);
+      //child2->nkeys = tree->keys_per_block - ((K) + 1);
+      child2->nkeys = K - 1;
 
       //n->nkeys = n->nkeys - ((n->nkeys/2) + 1);
       n->nkeys -= (K );
- //     bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
-//      bzero(&n->lbas[K], ((tree->lbas_per_block - (K)) + 1) * 4);
-     fprintf(stderr, "%c | %c | %c | %c %d \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0], n->nkeys);
+      bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
+      bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
+  /*
+  if (n->internal == 0){
+      fprintf(stderr, "I: %d\n", child2->nkeys);
 
+   fprintf(stderr, "%c | %c | %c | %c | %c \n", child2->keys[0][0], child2->keys[1][0], child2->keys[2][0], child2->keys[3][0], child2->keys[4][0]);
+   fprintf(stderr, "%d | %d | %d | %d \n", child2->lbas[0], child2->lbas[1], child2->lbas[2], child2->lbas[3]);
+   fprintf(stderr, "key %c | %c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0], n->keys[4][0]);
+   fprintf(stderr, "%d | %d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3], n->lbas[4]);
+   }
+*/
       memcpy(parent->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), parent->lbas, tree->lbas_per_block * 4);
 
       memcpy(child2->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), child2->lbas, tree->lbas_per_block * 4);
@@ -200,24 +212,24 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
 
    jdisk_write(tree->disk, F, record);
    n->nkeys ++;
-  // fprintf(stderr, "before %d\n ", n->nkeys);
    n->internal = 0;
 
    if (n->nkeys > tree->keys_per_block) {
-  fprintf(stderr, "%d \n", n->nkeys);
+  //fprintf(stderr, " before %d \n", n->nkeys);
       split(tree, n);
    }
- //  fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
- //  fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
    memcpy(n->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), n->lbas, (tree->lbas_per_block) * 4);
 
    // n->bytes[1] ++;
    n->bytes[1] = n->nkeys;
    n->bytes[0] = n->internal;
    jdisk_write(tree->disk, n->lba, n->bytes);
-   fprintf(stderr, "after %d\n", n->nkeys);
-   //  fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
-   //  fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
+  // if (n->internal == 0){
+  // fprintf(stderr, "NODE lba %d\n ", n->lba);
+      
+   //  fprintf(stderr, "key %c | %c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0], n->keys[4][0]);
+   //  fprintf(stderr, "lba %d | %d | %d | %d \n", n->lbas[1], n->lbas[2], n->lbas[3], n->lbas[4]);
+   //  }
    char BUF[1024];
    memcpy(BUF, &tree->key_size, 4);
    memcpy(BUF + 4, &tree->root_lba, 4);
