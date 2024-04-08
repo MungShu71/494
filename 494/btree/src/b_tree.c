@@ -116,7 +116,6 @@ void split(B_Tree *tree, Tree_Node *n){
             break;
          }
       }
-     // fprintf(stderr, "i: %d \n", i);
      // shift(tree, parent, i, 0);
      for (int k = parent->nkeys; k > i; k--){
       memcpy(parent->keys[k], parent->keys[k-1], tree->key_size);
