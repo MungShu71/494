@@ -119,7 +119,7 @@ void split(B_Tree *tree, Tree_Node *n){
 
 
       int K = tree->keys_per_block % 2 == 0 ? n->nkeys / 2 : (n->nkeys / 2) + 1;
-      fprintf(stderr, "K : %d\n", K);
+      fprintf(stderr, "K : %d %d\n", K, n->keys);
 
       for (i = 0; i < parent->nkeys; i++){
          res = memcmp(parent->keys[i], n->keys[K], tree->key_size);
@@ -141,9 +141,10 @@ void split(B_Tree *tree, Tree_Node *n){
       child2->nkeys = tree->keys_per_block - ((K) + 1);
 
       //n->nkeys = n->nkeys - ((n->nkeys/2) + 1);
-      n->nkeys = (K + 1);
-      bzero(n->keys[K], ((tree->keys_per_block - (K)) +1)  * tree->key_size );
-      bzero(&n->lbas[K], ((tree->lbas_per_block - (K)) + 1) * 4);
+      n->nkeys -= (K );
+ //     bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
+//      bzero(&n->lbas[K], ((tree->lbas_per_block - (K)) + 1) * 4);
+     fprintf(stderr, "%c | %c | %c | %c %d \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0], n->nkeys);
 
       memcpy(parent->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), parent->lbas, tree->lbas_per_block * 4);
 
@@ -199,14 +200,15 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
 
    jdisk_write(tree->disk, F, record);
    n->nkeys ++;
-   fprintf(stderr, "before %d\n ", n->nkeys);
+  // fprintf(stderr, "before %d\n ", n->nkeys);
    n->internal = 0;
 
    if (n->nkeys > tree->keys_per_block) {
+  fprintf(stderr, "%d \n", n->nkeys);
       split(tree, n);
    }
-   fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
-   fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
+ //  fprintf(stderr, "%c | %c | %c | %c \n", n->keys[0][0], n->keys[1][0], n->keys[2][0], n->keys[3][0]);
+ //  fprintf(stderr, "%d | %d | %d | %d \n", n->lbas[0], n->lbas[1], n->lbas[2], n->lbas[3]);
    memcpy(n->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), n->lbas, (tree->lbas_per_block) * 4);
 
    // n->bytes[1] ++;
