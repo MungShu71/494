@@ -220,7 +220,6 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
    }
    memcpy(n->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), n->lbas, (tree->lbas_per_block) * 4);
 
-   // n->bytes[1] ++;
    n->bytes[1] = n->nkeys;
    n->bytes[0] = n->internal;
    jdisk_write(tree->disk, n->lba, n->bytes);
