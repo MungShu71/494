@@ -215,7 +215,6 @@ unsigned int b_tree_insert(void *b_tree, void *key, void *record){
    n->internal = 0;
 
    if (n->nkeys > tree->keys_per_block) {
-  //fprintf(stderr, " before %d \n", n->nkeys);
       split(tree, n);
    }
    memcpy(n->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), n->lbas, (tree->lbas_per_block) * 4);
