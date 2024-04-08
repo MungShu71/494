@@ -336,13 +336,10 @@ void *b_tree_attach(char *filename){
 
 
    void *d = jdisk_attach(filename);
-   memcpy(&b->key_size, BUF, 4);
-   memcpy(&b->root_lba, BUF + 4, 4);
-   memcpy(&b->first_free_block, BUF + 8,8);
 
    b->disk = d;
 
-   jdisk_read(d, 0, b);
+   jdisk_read(d, 0, BUF);
 
    b->size = jdisk_size(d);
    b->num_lbas = b->size / JDISK_SECTOR_SIZE;
@@ -353,6 +350,9 @@ void *b_tree_attach(char *filename){
    b->tmp_e_index = -1;
    b->flush = 0;
 
+   memcpy(&b->key_size, BUF, 4);
+   memcpy(&b->root_lba, BUF + 4, 4);
+   memcpy(&b->first_free_block, BUF + 8,8);
 
 
    return (void *) b;
