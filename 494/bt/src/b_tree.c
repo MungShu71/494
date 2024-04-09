@@ -186,7 +186,6 @@ void split(B_Tree *tree, Tree_Node *n){
    bzero(n->keys[K], ((tree->keys_per_block - (K)) )  * tree->key_size );
    bzero(&n->lbas[K + 1], ((tree->lbas_per_block - (K)) + 1) * 4);
 
-   // copy lbas to respective node's bytes 
    memcpy(parent->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), parent->lbas, tree->lbas_per_block * 4);
    memcpy(child2->bytes + JDISK_SECTOR_SIZE - (tree->lbas_per_block * 4), child2->lbas, tree->lbas_per_block * 4);
 
@@ -199,7 +198,6 @@ void split(B_Tree *tree, Tree_Node *n){
    jdisk_write(tree->disk, child2->lba, child2->bytes);
 
    jdisk_write(tree->disk, parent->lba, parent->bytes);
-
 }
 
 unsigned int b_tree_find(void *b_tree, void *key){
