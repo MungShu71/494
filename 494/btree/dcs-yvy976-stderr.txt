@@ -1,1 +1,1 @@
-DOUBLE-CHECK: Error at lba 1.  LBA 12 is too big 129
+DOUBLE-CHECK: Error at lba 1.  LBA 4 is too big 4203180560
